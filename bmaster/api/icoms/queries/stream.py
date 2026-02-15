@@ -1,14 +1,21 @@
-from fastapi import Depends, WebSocket, WebSocketDisconnect
+from typing import Optional
+from fastapi import HTTPException, WebSocket, WebSocketDisconnect, status
 import numpy as np
 from pydantic import BaseModel, ValidationError
 from wauxio import Audio, StreamData
 from wauxio.utils import AudioStack
 
-from bmaster.api.auth import require_permissions
+from bmaster.api.auth import require_auth_token, require_bearer_jwt, require_permissions, require_user
+from bmaster.api.auth.users import User
+from bmaster.api.icoms.queries import query_author_from_user
 import bmaster.icoms as icoms
 from bmaster.icoms import Icom
 from bmaster.icoms.queries import PlayOptions, Query, QueryStatus
 from bmaster.api import api
+
+# Frontend commonly sends chunks around 16k samples (~0.34s @48kHz).
+# Keep this buffer above a single chunk to avoid regular underruns.
+STREAM_STACK_SECONDS = 0.6
 
 
 class APIStreamRequest(BaseModel):
@@ -24,15 +31,16 @@ class APIStreamQuery(Query):
 	force: bool
 	stack: AudioStack
 
-	def __init__(self, icom: Icom, priority: int, force: bool, rate: int, channels: int):
+	def __init__(self, icom: Icom, priority: int, force: bool, rate: int, channels: int, author: Optional[User] = None):
 		self.description = "Playing plain audio stream"
 		self.priority = priority
 		self.force = force
+		self.author = query_author_from_user(author) if author else None
 
 		self.stack = AudioStack(
 			rate=rate,
 			channels=channels,
-			samples=int(rate*2)
+			samples=max(1, int(rate * STREAM_STACK_SECONDS))
 		)
 
 		super().__init__(icom)
@@ -45,11 +53,51 @@ class APIStreamQuery(Query):
 	def stop(self):
 		super().stop()
 
-@api.websocket('/queries/stream', dependencies=[
-	Depends(require_permissions('bmaster.icoms.queries.stream'))
-])
+def _get_ws_bearer_token(ws: WebSocket) -> Optional[str]:
+	auth_header = ws.headers.get('authorization')
+	if auth_header:
+		scheme, _, token = auth_header.partition(' ')
+		if scheme.lower() == 'bearer' and token:
+			return token
+		if scheme and not token:
+			# Allow raw token in header for non-standard clients.
+			return scheme
+	return ws.query_params.get('token')
+
+async def _require_stream_user(ws: WebSocket) -> Optional[User]:
+	token = _get_ws_bearer_token(ws)
+	if not token:
+		await ws.send_json({
+			'type': 'error',
+			'error': 'missing bearer token'
+		})
+		await ws.close(code=status.WS_1008_POLICY_VIOLATION)
+		return None
+
+	try:
+		jwt_data = require_bearer_jwt(token)
+		auth_token = require_auth_token(jwt_data)
+		user = await require_user(auth_token)
+		require_permissions('bmaster.icoms.queries.stream')(user)
+		return user
+	except HTTPException as e:
+		await ws.send_json({
+			'type': 'error',
+			'error': e.detail
+		})
+		await ws.close(code=status.WS_1008_POLICY_VIOLATION)
+		return None
+
+@api.websocket('/queries/stream')
 async def play_stream(ws: WebSocket):
 	await ws.accept()
+
+	try:
+		user = await _require_stream_user(ws)
+	except WebSocketDisconnect:
+		return
+	if not user:
+		return
 	
 	try:
 		try:
@@ -71,6 +119,7 @@ async def play_stream(ws: WebSocket):
 				'error': 'icom not found'
 			})
 			await ws.close()
+			return
 
 		channels = request.channels
 		# TODO: Implement multi-channels
@@ -80,22 +129,24 @@ async def play_stream(ws: WebSocket):
 				'error': 'only 1 channel supported'
 			})
 			await ws.close()
+			return
 		
 		rate = request.rate
 	except WebSocketDisconnect: return
 
 	q = APIStreamQuery(
 		icom=icom,
-		priority=1,
-		force=False,
+		priority=request.priority,
+		force=request.force,
 		rate=rate,
-		channels=channels
+		channels=channels,
+		author=user
 	)
 	
 	try:
 		await ws.send_json({
 			'type': 'waiting' if q.status == QueryStatus.WAITING else 'started',
-			'query': q.get_info().model_dump_json()
+			'query': q.get_info().model_dump(mode='json')
 		})
 	except WebSocketDisconnect:
 		q.cancel()
@@ -106,7 +157,7 @@ async def play_stream(ws: WebSocket):
 		try:
 			await ws.send_json({
 				'type': 'cancelled',
-				'query': q.get_info().model_dump_json()
+				'query': q.get_info().model_dump(mode='json')
 			})
 			await ws.close()
 		except WebSocketDisconnect: pass
@@ -117,7 +168,7 @@ async def play_stream(ws: WebSocket):
 		try:
 			await ws.send_json({
 				'type': 'stopped',
-				'query': q.get_info().model_dump_json()
+				'query': q.get_info().model_dump(mode='json')
 			})
 		except WebSocketDisconnect: pass
 		except RuntimeError: pass
@@ -127,7 +178,7 @@ async def play_stream(ws: WebSocket):
 		try:
 			await ws.send_json({
 				'type': 'started',
-				'query': q.get_info().model_dump_json()
+				'query': q.get_info().model_dump(mode='json')
 			})
 		except WebSocketDisconnect: pass
 

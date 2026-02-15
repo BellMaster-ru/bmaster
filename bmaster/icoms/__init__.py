@@ -13,6 +13,9 @@ from bmaster import configs
 
 logger = logs.main_logger.getChild('icoms')
 
+ICOM_TICK_DELAY = 0.01
+DIRECT_MIN_BUFFER_SECONDS = 0.2
+DIRECT_BUFFER_FACTOR = 2.0
 
 class IcomInfo(BaseModel):
 	id: str
@@ -44,7 +47,7 @@ class Icom:
 		self.output = output
 	
 	def run(self):
-		return self.output.run(0.5)
+		return self.output.run(ICOM_TICK_DELAY)
 
 	def start(self):
 		if not self.paused: ValueError("Icom is not paused")
@@ -151,10 +154,11 @@ async def start():
 		if icom_config.direct:
 			rate = icom.output.rate
 			channels = icom.output.channels
+			buffer_seconds = max(direct.DELAY * DIRECT_BUFFER_FACTOR, DIRECT_MIN_BUFFER_SECONDS)
 			stack = AudioStack(
 				rate=rate,
 				channels=channels,
-				samples=int(rate * direct.DELAY * 2)
+				samples=max(1, int(rate * buffer_seconds))
 			)
 			icom.output.listen(stack.push)
 			direct.output_mixer.add(stack.pull)

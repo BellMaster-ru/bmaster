@@ -24,7 +24,7 @@ async def start():
 	# START
 	bmaster.configs.load_configs()
 	await bmaster.database.start()
-	# await bmaster.direct.start()
+	await bmaster.direct.start()
 	await bmaster.sounds.start()
 	await bmaster.icoms.start()
 	await bmaster.scheduling.start()
@@ -45,6 +45,6 @@ async def stop():
 	main_logger.info("Stopping...")
 
 	await bmaster.scheduling.stop()
-	# await bmaster.direct.stop()
+	await bmaster.direct.stop()
 
 	main_logger.info("Stopped")

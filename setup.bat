@@ -48,4 +48,4 @@ echo [=] Installation finished
 echo ---------------------------------------------------------
 echo INFO: Our project is using uv, please use uv instead of pip for convenient package management.
 echo INFO: You can check docs at https://docs.astral.sh/uv/getting-started/ for more information.
-echo INFO: You can now run the application using "python main.py"
+echo INFO: You can now run the application using "uv run main.py"

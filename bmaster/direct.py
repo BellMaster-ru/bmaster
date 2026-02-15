@@ -10,7 +10,8 @@ logger = logs.main_logger.getChild('direct')
 
 RATE = 48000
 CHANNELS = 2
-DELAY = 0.5
+# Audio device callback block duration. Lower value -> lower latency, higher CPU load.
+DELAY = 0.1
 
 output_mixer: AudioMixer = AudioMixer()
 output: AudioOutput = AudioOutput(
@@ -26,6 +27,7 @@ async def start():
 	logger.info('Starting output stream...')
 
 	def _out_callback(outdata, frames, time, status):
+		outdata.fill(0)
 		duration = frames/RATE
 		frame = output.tick(duration)
 		audio = frame.audio
@@ -35,7 +37,7 @@ async def start():
 	
 	out_stream = sd.OutputStream(
 		samplerate=RATE,
-		blocksize=int(RATE * DELAY),
+		blocksize=max(1, int(RATE * DELAY)),
 		channels=CHANNELS,
 		dtype=np.float32,
 		callback=_out_callback
