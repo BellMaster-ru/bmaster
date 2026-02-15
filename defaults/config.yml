@@ -54,3 +54,4 @@ roles:
       - bmaster.scripting.manage
       - bmaster.settings.reboot
       - bmaster.settings.volume
+      - bmaster.settings.updates

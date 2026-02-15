@@ -1,3 +1,4 @@
+import asyncio
 import platform
 import re
 import subprocess
@@ -18,6 +19,23 @@ class VolumeSetRequest(BaseModel):
 class VolumeResponse(BaseModel):
     ok: bool
     volume: int
+
+
+class UpdateResponse(BaseModel):
+    ok: bool
+    status: str
+    backend_updated: bool = False
+    frontend_updated: bool = False
+    detail: str | None = None
+
+
+class CheckUpdatesResponse(BaseModel):
+    ok: bool
+    status: str
+    has_updates: bool
+    backend_has_updates: bool = False
+    frontend_has_updates: bool = False
+    detail: str | None = None
 
 
 @router.post('/reboot', dependencies=[Depends(require_permissions('bmaster.settings.reboot'))])
@@ -106,5 +124,61 @@ async def get_volume() -> VolumeResponse:
         raise HTTPException(status_code=500)
     return VolumeResponse(ok=True, volume=res)
 
+
+def _run_update_sync() -> tuple[bool, bool]:
+    from update import run_update
+
+    return run_update()
+
+
+def _run_check_updates_sync() -> tuple[bool, bool]:
+    from check_updates import run_check
+
+    return run_check()
+
+
+@router.post(
+    "/update",
+    response_model=UpdateResponse,
+    dependencies=[Depends(require_permissions("bmaster.settings.updates"))],
+)
+async def update_endpoint() -> UpdateResponse:
+    try:
+        backend_updated, frontend_updated = await asyncio.to_thread(_run_update_sync)
+    except Exception as exc:
+        return UpdateResponse(ok=False, status="failed", detail=str(exc))
+
+    return UpdateResponse(
+        ok=True,
+        status="success",
+        backend_updated=backend_updated,
+        frontend_updated=frontend_updated,
+    )
+
+
+@router.get(
+    "/check_updates",
+    response_model=CheckUpdatesResponse,
+    dependencies=[Depends(require_permissions("bmaster.settings.updates"))],
+)
+async def check_updates_endpoint() -> CheckUpdatesResponse:
+    try:
+        backend_has_updates, frontend_has_updates = await asyncio.to_thread(_run_check_updates_sync)
+    except Exception as exc:
+        return CheckUpdatesResponse(
+            ok=False,
+            status="failed",
+            has_updates=False,
+            detail=str(exc),
+        )
+
+    has_updates = backend_has_updates or frontend_has_updates
+    return CheckUpdatesResponse(
+        ok=True,
+        status="updates_available" if has_updates else "up_to_date",
+        has_updates=has_updates,
+        backend_has_updates=backend_has_updates,
+        frontend_has_updates=frontend_has_updates,
+    )
 
 

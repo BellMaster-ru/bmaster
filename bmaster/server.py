@@ -22,7 +22,7 @@ class CORSConfig(BaseModel):
 	allow_headers: List[str] = Field(default_factory=lambda: ['*'])
 
 class SSLConfig(BaseModel):
-	enabled: bool = False
+	enabled: bool = True
 	cert_path: Path = Path('data/cert.pem')
 	key_path: Path = Path('data/key.pem')
 
