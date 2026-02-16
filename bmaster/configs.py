@@ -11,6 +11,11 @@ CONFIG_PATH = Path('data/config.yml')
 _UNDEFINED = {}
 main_config: Optional[dict] = None
 
+def _require_loaded_config() -> dict:
+	if main_config is None:
+		raise RuntimeError('Main config is not loaded yet')
+	return main_config
+
 def load_configs():
 	global main_config
 
@@ -29,11 +34,10 @@ def load_configs():
 	logger.info('Main config loaded')
 
 def get(name: str, default = _UNDEFINED):
-	if main_config is None:
-		raise RuntimeError('Main config is not loaded yet')
+	config = _require_loaded_config()
 	
 	try:
-		data = main_config[name]
+		data = config[name]
 		return data
 	except KeyError:
 		if default is _UNDEFINED:
@@ -41,3 +45,22 @@ def get(name: str, default = _UNDEFINED):
 			raise
 		else:
 			return default
+
+# def save_configs():
+# 	config = _require_loaded_config()
+# 	tmp_path = CONFIG_PATH.with_suffix(CONFIG_PATH.suffix + '.tmp')
+
+# 	with open(tmp_path, 'w', encoding='utf8') as f:
+# 		yaml.safe_dump(config, f, allow_unicode=True, sort_keys=False)
+
+# 	tmp_path.replace(CONFIG_PATH)
+
+# def update_network_settings(ip: str, mask: str, gateway: str, dns: str):
+# 	config = _require_loaded_config()
+# 	config['network'] = {
+# 		'ip': ip,
+# 		'mask': mask,
+# 		'gateway': gateway,
+# 		'dns': dns,
+# 	}
+# 	save_configs()

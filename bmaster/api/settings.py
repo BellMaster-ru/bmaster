@@ -3,10 +3,11 @@ import platform
 import re
 import subprocess
 
-from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field
+from fastapi import APIRouter, Depends, Form, HTTPException, status
+from pydantic import BaseModel, Field, ValidationError, field_validator
 
 from bmaster.api.auth import require_permissions
+from bmaster import configs
 
 
 router = APIRouter(tags=['settings'])
@@ -37,6 +38,35 @@ class CheckUpdatesResponse(BaseModel):
     frontend_has_updates: bool = False
     detail: str | None = None
 
+
+# class NetworkSettingsPayload(BaseModel):
+#     ip: str
+#     mask: str
+#     gateway: str
+#     dns: str
+
+#     @field_validator('ip', 'gateway', 'dns')
+#     @classmethod
+#     def validate_ip(cls, v: str) -> str:
+#         pattern = r'^(\d{1,3}\.){3}\d{1,3}$'
+#         if not re.match(pattern, v):
+#             raise ValueError(f'Невалидный IP: {v}')
+#         parts = v.split('.')
+#         if not all(0 <= int(p) <= 255 for p in parts):
+#             raise ValueError(f'IP октеты должны быть 0-255: {v}')
+#         return v
+
+#     @field_validator('mask')
+#     @classmethod
+#     def validate_mask(cls, v: str) -> str:
+#         valid_masks = {
+#             '255.255.255.0', '255.255.0.0', '255.0.0.0',
+#             '255.255.255.128', '255.255.255.192', '255.255.255.224',
+#             '255.255.255.240', '255.255.255.252',
+#         }
+#         if v not in valid_masks:
+#             raise ValueError(f'Невалидная маска: {v}')
+#         return v
 
 @router.post('/reboot', dependencies=[Depends(require_permissions('bmaster.settings.reboot'))])
 async def reboot() -> bool:
@@ -175,10 +205,47 @@ async def check_updates_endpoint() -> CheckUpdatesResponse:
     has_updates = backend_has_updates or frontend_has_updates
     return CheckUpdatesResponse(
         ok=True,
-        status="updates_available" if has_updates else "up_to_date",
+        status= "updates_available" if has_updates else "up_to_date",
         has_updates=has_updates,
         backend_has_updates=backend_has_updates,
         frontend_has_updates=frontend_has_updates,
     )
 
 
+@router.get("/health")
+async def health():
+    return {"status": "ok"}
+
+
+# @router.post(
+#     "/net_settings",
+#     dependencies=[Depends(require_permissions("bmaster.settings.net_settings.save"))],
+# )
+# async def save_network_settings(
+#     ip: str = Form(...),
+#     mask: str = Form(...),
+#     gateway: str = Form(...),
+#     dns: str = Form(...),
+# ):
+#     try:
+#         payload = NetworkSettingsPayload(ip=ip, mask=mask, gateway=gateway, dns=dns)
+#     except ValidationError as exc:
+#         raise HTTPException(
+#             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+#             detail=exc.errors(),
+#         )
+
+#     try:
+#         configs.update_network_settings(
+#             ip=payload.ip,
+#             mask=payload.mask,
+#             gateway=payload.gateway,
+#             dns=payload.dns,
+#         )
+#     except Exception:
+#         raise HTTPException(
+#             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+#             detail="Не удалось сохранить сетевые параметры",
+#         )
+
+#     return {"status": "ok"}
