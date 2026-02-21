@@ -95,11 +95,7 @@ fi
 
 REPO_DIR="$(pwd -P)"
 SERVICE_NAME="bmaster.service"
-SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}"
-SERVICE_USER="${SUDO_USER:-${USER:-}}"
-if [ -z "$SERVICE_USER" ]; then
-  SERVICE_USER="$(id -un)"
-fi
+SERVICE_FILE="$HOME/.config/systemd/user/bmaster.service"
 
 PYTHON_BIN="${REPO_DIR}/.venv/bin/python"
 MAIN_PY="${REPO_DIR}/main.py"
@@ -109,6 +105,7 @@ if [ ! -x "$PYTHON_BIN" ]; then
 fi
 
 echo "[-] Creating systemd unit at ${SERVICE_FILE}..."
+mkdir -p "$HOME/.config/systemd/user"
 TMP_UNIT="$(mktemp)"
 cat > "$TMP_UNIT" <<EOF
 [Unit]
@@ -118,15 +115,17 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=${SERVICE_USER}
 WorkingDirectory=${REPO_DIR}
-ExecStart=${UV_BIN} ${MAIN_PY}
+ExecStart=${UV_BIN} run ${MAIN_PY}
 Restart=always
 RestartSec=5
 
+Environment=PYTHONUNBUFFERED=1
+
 [Install]
-WantedBy=multi-user.target
+WantedBy=default.target
 EOF
+
 
 run_as_root install -m 644 "$TMP_UNIT" "$SERVICE_FILE"
 rm -f "$TMP_UNIT"

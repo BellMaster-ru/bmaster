@@ -617,7 +617,7 @@ async def save_network_settings(req: NetSettingsRequest) -> NetSettingsResponse:
         _apply_netplan_settings(req, interface)
 
     try:
-        subprocess.Popen(["sh", "-c", "sleep 5 && reboot"])
+        subprocess.Popen(["sh", "-c", "sleep 5 && sudo systemctl reboot"])
     except Exception as exc:
         _raise_net_error(500, f"Network settings saved, but failed to schedule reboot: {exc}")
 
