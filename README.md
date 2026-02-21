@@ -43,7 +43,7 @@ chmod +x setup.sh
 Если нужно принудительно перевыпустить сертификат:
 
 ```bash
-uv run -m bmaster.maintenance bootstrap --update-cert
+uv run -m service bootstrap --update-cert
 ```
 
 После обновления сертификата:
@@ -88,29 +88,19 @@ sudo systemctl status bmaster.service
 Проверка обновлений:
 
 ```bash
-uv run -m bmaster.maintenance check
+uv run -m service check
 ```
 
 Обновление backend + frontend:
 
 ```bash
-uv run -m bmaster.maintenance update
+uv run -m service update
 ```
 
 Если `update` сообщает, что backend обновился:
 
 ```bash
 sudo systemctl restart bmaster.service
-```
-
-### Совместимость со старыми командами
-
-Legacy-энтрипоинты сохранены и продолжают работать:
-
-```bash
-python setup.py --update-cert
-uv run check_updates.py
-uv run update.py
 ```
 
 ## Дополнительная информация

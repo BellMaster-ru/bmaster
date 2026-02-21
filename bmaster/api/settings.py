@@ -517,13 +517,13 @@ async def get_volume() -> VolumeResponse:
 
 
 def _run_update_sync() -> tuple[bool, bool]:
-    from update import run_update
+    from service import run_update
 
     return run_update()
 
 
 def _run_check_updates_sync() -> tuple[bool, bool]:
-    from check_updates import run_check
+    from service import run_check
 
     return run_check()
 

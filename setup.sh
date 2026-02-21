@@ -84,7 +84,7 @@ echo "[+] Installed requirements"
 
 # ---------- setup ----------
 echo "[-] Creating data directory and app data..."
-"$UV_BIN" run -m bmaster.maintenance bootstrap
+"$UV_BIN" run -m service bootstrap
 echo "[+] Setup completed"
 
 # ---------- systemd service ----------
