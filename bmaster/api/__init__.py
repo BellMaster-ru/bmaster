@@ -1,41 +1,43 @@
-from fastapi import HTTPException, APIRouter
-
+from fastapi import HTTPException, APIRouter, status
 
 from bmaster.server import app
 from bmaster.logs import main_logger
 
 
-logger = main_logger.getChild('api')
+logger = main_logger.getChild("api")
 
 api = APIRouter()
 
 
 async def start():
-	logger.info('Importing endpoints...')
+    logger.info("Importing endpoints...")
 
-	import bmaster.api.auth
-	await bmaster.api.auth.start()
+    import bmaster.api.auth
 
-	import bmaster.api.icoms
-	import bmaster.api.icoms.listen
-	import bmaster.api.icoms.queries
-	import bmaster.api.icoms.queries.audio
-	import bmaster.api.icoms.queries.sound
-	import bmaster.api.icoms.queries.stream
+    await bmaster.api.auth.start()
 
-	from bmaster.api import scripting
-	from bmaster.api import sounds
-	from bmaster.api import settings
-	from bmaster.api import certs
+    import bmaster.api.icoms
+    import bmaster.api.icoms.listen
+    import bmaster.api.icoms.queries
+    import bmaster.api.icoms.queries.audio
+    import bmaster.api.icoms.queries.sound
+    import bmaster.api.icoms.queries.stream
 
-	logger.info('Including routers...')
+    from bmaster.api import scripting
+    from bmaster.api import sounds
+    from bmaster.api import settings
+    from bmaster.api import certs
 
-	api.include_router(sounds.router, prefix='/sounds')
-	api.include_router(settings.router, prefix='/settings')
-	api.include_router(certs.router, prefix='/certs')
-	@api.get('/*', status_code=404)
-	async def not_found():
-		raise HTTPException(status_code=404, detail='Not Found')
-	app.include_router(api, prefix='/api')
+    logger.info("Including routers...")
 
-	logger.info('Started')
+    api.include_router(sounds.router, prefix="/sounds")
+    api.include_router(settings.router, prefix="/settings")
+    api.include_router(certs.router, prefix="/certs")
+
+    @api.get("/{full_path:path}")
+    async def not_found():
+        raise HTTPException(status.HTTP_404_NOT_FOUND)
+
+    app.include_router(api, prefix="/api")
+
+    logger.info("Started")
