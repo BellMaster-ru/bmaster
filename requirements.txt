@@ -2,6 +2,8 @@ anyio
 uvicorn
 fastapi
 sounddevice
+gpiod
+gpiozero
 wauxio
 wsignals
 aiosqlite

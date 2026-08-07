@@ -8,6 +8,7 @@ from bmaster.logs import main_logger
 import bmaster.configs
 import bmaster.database
 import bmaster.direct
+import bmaster.gpio
 import bmaster.sounds
 import bmaster.icoms
 import bmaster.scheduling
@@ -25,6 +26,7 @@ async def start():
 	bmaster.configs.load_configs()
 	await bmaster.database.start()
 	await bmaster.direct.start()
+	await bmaster.gpio.start()
 	await bmaster.sounds.start()
 	await bmaster.icoms.start()
 	await bmaster.scheduling.start()
@@ -46,5 +48,6 @@ async def stop():
 
 	await bmaster.scheduling.stop()
 	await bmaster.direct.stop()
+	await bmaster.gpio.stop()
 
 	main_logger.info("Stopped")

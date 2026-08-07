@@ -23,6 +23,13 @@ icoms:
       name: "Главный"
       direct: true
 
+gpio:
+  enabled: false
+  pin: 17
+  active_high: true
+  off_delay: 0.5
+  chip: null
+
 server:
   ssl:
     enabled: true
@@ -55,3 +62,4 @@ roles:
       - bmaster.settings.reboot
       - bmaster.settings.volume
       - bmaster.settings.updates
+      - bmaster.settings.gpio

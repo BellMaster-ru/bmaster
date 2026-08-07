@@ -1,6 +1,6 @@
 import secrets
 
-from service.backend import check_backend_updates, update_backend
+from service.backend import check_backend_updates, sync_dependencies, update_backend
 from service.certs import setup_cert
 from service.frontend import check_frontend_updates, sync_frontend
 from service.paths import (
@@ -77,10 +77,12 @@ def bootstrap(update_cert: bool = False) -> int:
     return 0
 
 
-def run_update() -> tuple[bool, bool]:
+def run_update() -> tuple[bool, bool, bool]:
     backend_updated = update_backend(REPO_PATH)
+    # an update may bring new dependencies, so they have to be installed too
+    dependencies_updated = sync_dependencies(REPO_PATH) if backend_updated else False
     frontend_updated = sync_frontend(STATIC_PATH, force=False)
-    return backend_updated, frontend_updated
+    return backend_updated, frontend_updated, dependencies_updated
 
 
 def run_check() -> tuple[bool, bool]:
@@ -100,8 +102,10 @@ def print_check_result() -> None:
 
 
 def print_update_result() -> None:
-    backend_updated, frontend_updated = run_update()
+    backend_updated, frontend_updated, dependencies_updated = run_update()
     print("Backend: updated" if backend_updated else "Backend: no updates")
     print("Frontend: updated" if frontend_updated else "Frontend: no updates")
+    if dependencies_updated:
+        print("Dependencies: installed")
     if backend_updated:
         print(f"[!] Restart service to apply backend changes: sudo systemctl restart {SYSTEMD_SERVICE_NAME}")

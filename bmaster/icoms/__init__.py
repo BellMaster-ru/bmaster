@@ -5,7 +5,7 @@ from wauxio.output import AudioOutput
 from wauxio.mixer import AudioMixer
 from wauxio.utils import AudioStack
 
-from bmaster import direct, logs
+from bmaster import direct, gpio, logs
 from bmaster.utils import aio
 from .queries import PlayOptions, Query, QueryInfo
 from bmaster import configs
@@ -62,7 +62,7 @@ class Icom:
 		playing = self.playing
 		if playing:
 			playing.stop()
-			self.playing = None
+			self._set_playing(None)
 			self._add_query(playing)
 
 	def _add_query(self, query: Query):
@@ -79,7 +79,7 @@ class Icom:
 				if query.force > playing.force or query.priority > playing.priority:
 					# stop playing query and play new query instead
 					playing.stop()
-					self.playing = None
+					self._set_playing(None)
 					self._play_query(query)
 					self._add_query(playing)
 					return
@@ -102,16 +102,21 @@ class Icom:
 		del queue[0]
 		return query
 
+	def _set_playing(self, query: Optional[Query]):
+		self.playing = query
+		# hold the GPIO pin while anything is playing, if the mode is enabled
+		gpio.set_icom_active(self.id, query is not None)
+
 	def _play_query(self, query: Query):
 		if self.playing: raise RuntimeError("There's already playing query")
 		options = PlayOptions(
 			mixer=self.mixer
 		)
-		self.playing = query
+		self._set_playing(query)
 		aio.run(query.play(options))
 
 	def _on_playing_finished(self):
-		self.playing = None
+		self._set_playing(None)
 		query = self._take_next_query()
 		if query: self._play_query(query)
 	

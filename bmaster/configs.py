@@ -46,14 +46,20 @@ def get(name: str, default = _UNDEFINED):
 		else:
 			return default
 
-# def save_configs():
-# 	config = _require_loaded_config()
-# 	tmp_path = CONFIG_PATH.with_suffix(CONFIG_PATH.suffix + '.tmp')
+def save_configs():
+	config = _require_loaded_config()
+	tmp_path = CONFIG_PATH.with_suffix(CONFIG_PATH.suffix + '.tmp')
 
-# 	with open(tmp_path, 'w', encoding='utf8') as f:
-# 		yaml.safe_dump(config, f, allow_unicode=True, sort_keys=False)
+	with open(tmp_path, 'w', encoding='utf8') as f:
+		yaml.safe_dump(config, f, allow_unicode=True, sort_keys=False)
 
-# 	tmp_path.replace(CONFIG_PATH)
+	tmp_path.replace(CONFIG_PATH)
+
+def set(name: str, data):
+	config = _require_loaded_config()
+	config[name] = data
+	save_configs()
+	logger.info(f'Main config partition "{name}" updated')
 
 # def update_network_settings(ip: str, mask: str, gateway: str, dns: str):
 # 	config = _require_loaded_config()
