@@ -2,7 +2,7 @@ from datetime import date
 from typing import List, Optional, Self, Set
 from sqlalchemy import Boolean, Date, ForeignKey, Integer, Text
 from sqlalchemy.orm import Mapped, mapped_column
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from bmaster.database import Base, JSONModel, ReprArray
 from bmaster.utils import TimeHHMM
@@ -17,18 +17,25 @@ class ScheduleLesson(BaseModel):
 	end_at: TimeHHMM
 	end_sound: Optional[str] = None
 
+class PrecallEntry(BaseModel):
+	'''One pre-call (предзвонок) in a `Schedule`'s pre-call sequence, played before every lesson start'''
+	sound_name: str
+	minutes_before: int = Field(ge=0)
+
 class ScheduleInfo(BaseModel):
 	'''Info snapshot of `Schedule`'''
 	id: int
 	name: str
 	lessons: List[ScheduleLesson]
+	precalls: List[PrecallEntry] = []
 
 class ScheduleData(BaseModel):
 	'''`Schedule` metadata'''
 	lessons: List[ScheduleLesson]
+	precalls: List[PrecallEntry] = []
 
 class Schedule(Base):
-	'''Stores full schedule for a day, contains `ScheduleLesson`s'''
+	'''Stores full schedule for a day, contains `ScheduleLesson`s and its `PrecallEntry` sequence'''
 	__tablename__ = 'school_schedule'
 
 	id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -39,14 +46,15 @@ class Schedule(Base):
 		return ScheduleInfo(
 			id=self.id,
 			name=self.name,
-			lessons=self.data.lessons
+			lessons=self.data.lessons,
+			precalls=self.data.precalls
 		)
 
 	def from_info(info: ScheduleInfo) -> Self:
 		return Schedule(
 			id=info.id,
 			name=info.name,
-			data=ScheduleData(lessons=info.lessons)
+			data=ScheduleData(lessons=info.lessons, precalls=info.precalls)
 		)
 
 

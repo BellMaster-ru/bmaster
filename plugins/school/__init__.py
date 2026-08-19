@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime, timedelta
 from typing import Optional
 from sqlalchemy import select
 import bmaster
@@ -49,18 +49,19 @@ async def get_today_override() -> Optional[ScheduleOverride]:
 			.where(ScheduleOverride.at == today)
 		)).scalar()
 
+async def is_lesson_muted(lesson_num: int) -> bool:
+	override = await get_today_override()
+	if override is None: return False
+	return override.mute_all_lessons or lesson_num in override.mute_lessons
+
 async def on_lesson(lesson_num: int, lesson_info: ScheduleLesson, is_start: bool):
 	sound_name = lesson_info.start_sound if is_start else lesson_info.end_sound
 	# Skip if there's no sound setup
 	if sound_name is None: return
 
-	# Get today override
-	override = await get_today_override()
-	if override is not None:
-		# Return if all lessons or this lesson is muted
-		if override.mute_all_lessons or lesson_num in override.mute_lessons:
-			return
-	
+	# Skip if this lesson is muted for today
+	if await is_lesson_muted(lesson_num): return
+
 	SoundQuery(
 		icom=icoms.get(ICOM_ID),
 		sound_name=sound_name,
@@ -69,6 +70,21 @@ async def on_lesson(lesson_num: int, lesson_info: ScheduleLesson, is_start: bool
 		author=QueryAuthor(
 			type='service',
 			name='Звонки'
+		)
+	)
+
+async def on_precall(lesson_num: int, sound_name: str):
+	# Skip if this lesson is muted for today (no point pre-calling a muted lesson)
+	if await is_lesson_muted(lesson_num): return
+
+	SoundQuery(
+		icom=icoms.get(ICOM_ID),
+		sound_name=sound_name,
+		priority=0,
+		force=False,
+		author=QueryAuthor(
+			type='service',
+			name='Предзвонок'
 		)
 	)
 
@@ -86,7 +102,6 @@ async def reschedule_lessons():
 		logger.info('There is no schedule for today, skipping...')
 		return
 
-	
 	for i, lesson in enumerate(schedule.data.lessons):
 		scheduler.add_job(
 			jobstore='temp',
@@ -101,6 +116,25 @@ async def reschedule_lessons():
 				'is_start': True
 			}
 		)
+		# Precalls are the schedule's own precall sequence, played before every lesson start
+		# (never before lesson end)
+		for j, precall in enumerate(schedule.data.precalls):
+			precall_at = (
+				datetime.combine(date.today(), lesson.start_at)
+				- timedelta(minutes=precall.minutes_before)
+			).time()
+			scheduler.add_job(
+				jobstore='temp',
+				id=f'school.lesson.precall#{i}.{j}',
+				func=on_precall,
+				trigger='cron',
+				hour=precall_at.hour,
+				minute=precall_at.minute,
+				kwargs={
+					'lesson_num': i,
+					'sound_name': precall.sound_name
+				}
+			)
 		scheduler.add_job(
 			jobstore='temp',
 			id=f'school.lesson.end#{i}',

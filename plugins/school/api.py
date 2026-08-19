@@ -9,7 +9,7 @@ from datetime import date, timedelta
 from bmaster.api.auth import require_permissions
 from bmaster.database import LocalSession
 from plugins.school.models import (
-	Schedule, ScheduleData, ScheduleInfo, ScheduleLesson,
+	Schedule, ScheduleData, ScheduleInfo, ScheduleLesson, PrecallEntry,
 	ScheduleAssignment, ScheduleAssignmentInfo,
 	ScheduleOverride, ScheduleOverrideInfo
 )
@@ -24,10 +24,12 @@ router = APIRouter(prefix='/school', tags=['school'])
 class ScheduleCreateRequest(BaseModel):
 	name: str
 	lessons: List[ScheduleLesson]
+	precalls: List[PrecallEntry] = []
 
 class ScheduleUpdateRequest(BaseModel):
 	name: str | None = None
 	lessons: List[ScheduleLesson] | None = None
+	precalls: List[PrecallEntry] | None = None
 
 @router.get('/schedules')
 async def get_schedules() -> List[ScheduleInfo]:
@@ -67,7 +69,8 @@ async def create_schedule(req: ScheduleCreateRequest) -> ScheduleInfo:
 			schedule = Schedule(
 				name=req.name,
 				data=ScheduleData(
-					lessons=req.lessons
+					lessons=req.lessons,
+					precalls=req.precalls
 				)
 			)
 			session.add(schedule)
@@ -86,6 +89,9 @@ async def update_schedule(schedule_id: int, req: ScheduleUpdateRequest) -> Sched
 				schedule.name = req.name
 			if req.lessons is not None:
 				schedule.data.lessons = req.lessons
+				flag_modified(schedule, "data")
+			if req.precalls is not None:
+				schedule.data.precalls = req.precalls
 				flag_modified(schedule, "data")
 	await reschedule_lessons()
 	return schedule.get_info()
@@ -354,9 +360,9 @@ class SchoolSettings(BaseModel):
 @router.get('/settings')
 async def export_settings(schedules: bool = False, assignments: bool = False, overrides: bool = False):
 	result = SchoolSettings()
-	
+
 	async with LocalSession() as session:
-		
+
 		if schedules:
 			schedules_q = (await session.execute(select(Schedule))).scalars()
 			result.schedules = list(map(Schedule.get_info, schedules_q))
@@ -380,7 +386,7 @@ async def export_settings(schedules: bool = False, assignments: bool = False, ov
 ])
 async def import_settings(file: UploadFile):
 	settings = SchoolSettings.model_validate_json((await file.read()).decode('utf-8'))
-	
+
 	async with LocalSession() as session:
 		async with session.begin():
 			await session.execute(delete(Schedule))
@@ -398,3 +404,4 @@ async def import_settings(file: UploadFile):
 			if overrides := settings.overrides:
 				for info in overrides:
 					session.add(ScheduleOverride.from_info(info))
+	await reschedule_lessons()
