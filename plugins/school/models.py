@@ -1,11 +1,16 @@
-from datetime import date
-from typing import List, Optional, Self, Set
-from sqlalchemy import Boolean, Date, ForeignKey, Integer, Text
+from datetime import date, time
+from typing import Annotated, List, Optional, Self, Set
+from sqlalchemy import Boolean, Date, ForeignKey, Integer, Text, Time
 from sqlalchemy.orm import Mapped, mapped_column
 from pydantic import BaseModel, Field
 
 from bmaster.database import Base, JSONModel, ReprArray
 from bmaster.utils import TimeHHMM
+
+
+# Weekday ids are the same as `datetime.date.weekday()` ones: 0 is monday, 6 is sunday
+Weekday = Annotated[int, Field(ge=0, le=6)]
+WeekdaySet = Annotated[Set[Weekday], Field(min_length=1)]
 
 
 # SCHEDULE
@@ -156,4 +161,47 @@ class ScheduleOverride(Base):
 			at=info.at,
 			mute_all_lessons=info.mute_all_lessons,
 			mute_lessons=info.mute_lessons
+		)
+
+
+# AUTOMATION
+
+class AutomationInfo(BaseModel):
+	'''`Automation` info snapshot'''
+	id: int
+	name: str
+	enabled: bool
+	sound_name: str
+	at: TimeHHMM
+	weekdays: WeekdaySet
+
+class Automation(Base):
+	'''Represents standalone weekly automation, playing `sound_name` at `at` on every weekday in `weekdays`'''
+	__tablename__ = 'school_automation'
+
+	id: Mapped[int] = mapped_column(Integer, primary_key=True)
+	name: Mapped[str] = mapped_column(Text)
+	enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+	sound_name: Mapped[str] = mapped_column(Text)
+	at: Mapped[time] = mapped_column(Time)
+	weekdays: Mapped[Set[int]] = mapped_column(ReprArray(int, unique_set=True))
+
+	def get_info(self) -> AutomationInfo:
+		return AutomationInfo(
+			id=self.id,
+			name=self.name,
+			enabled=self.enabled,
+			sound_name=self.sound_name,
+			at=self.at,
+			weekdays=self.weekdays
+		)
+
+	def from_info(info: AutomationInfo) -> Self:
+		return Automation(
+			id=info.id,
+			name=info.name,
+			enabled=info.enabled,
+			sound_name=info.sound_name,
+			at=info.at,
+			weekdays=info.weekdays
 		)

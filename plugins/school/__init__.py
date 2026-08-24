@@ -7,7 +7,7 @@ from bmaster.database import LocalSession
 from bmaster.icoms.queries import QueryAuthor, SoundQuery
 from bmaster.logs import main_logger
 from bmaster.scheduling import scheduler
-from plugins.school.models import Schedule, ScheduleAssignment, ScheduleLesson, ScheduleOverride
+from plugins.school.models import Automation, Schedule, ScheduleAssignment, ScheduleLesson, ScheduleOverride
 
 
 logger = main_logger.getChild('school')
@@ -20,6 +20,7 @@ async def start():
 	from bmaster.api import api
 	api.include_router(router)
 	bmaster.on_post_start.connect(reschedule_lessons)
+	bmaster.on_post_start.connect(reschedule_automations)
 	logger.info('Started')
 
 
@@ -148,5 +149,55 @@ async def reschedule_lessons():
 				'is_start': False
 			}
 		)
-	
+
 	logger.info('Lessons rescheduled')
+
+
+async def on_automation(automation_id: int, name: str, sound_name: str):
+	logger.info(f'Playing automation #{automation_id} \'{name}\'')
+	# Automations are independent of lessons, so lesson mutes are not applied here
+	SoundQuery(
+		icom=icoms.get(ICOM_ID),
+		sound_name=sound_name,
+		priority=0,
+		force=False,
+		author=QueryAuthor(
+			type='service',
+			name='Автоматизация',
+			label=name
+		)
+	)
+
+async def reschedule_automations():
+	logger.info('Rescheduling automations...')
+
+	# Clear old jobs
+	for job in scheduler.get_jobs(jobstore='temp'):
+		if job.id.startswith('school.automation'):
+			job.remove()
+
+	async with LocalSession() as session:
+		automations = (await session.execute(
+			select(Automation).where(Automation.enabled == True)
+		)).scalars().all()
+
+	for automation in automations:
+		# Automation without weekdays would never be triggered
+		if not automation.weekdays: continue
+
+		scheduler.add_job(
+			jobstore='temp',
+			id=f'school.automation#{automation.id}',
+			func=on_automation,
+			trigger='cron',
+			day_of_week=','.join(map(str, sorted(automation.weekdays))),
+			hour=automation.at.hour,
+			minute=automation.at.minute,
+			kwargs={
+				'automation_id': automation.id,
+				'name': automation.name,
+				'sound_name': automation.sound_name
+			}
+		)
+
+	logger.info(f'Automations rescheduled ({len(automations)} enabled)')

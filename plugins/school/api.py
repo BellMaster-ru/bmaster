@@ -7,13 +7,16 @@ from sqlalchemy.orm.attributes import flag_modified
 from datetime import date, timedelta
 
 from bmaster.api.auth import require_permissions
+from bmaster.api.sounds import SOUNDS_DIR, is_sound_name_valid
 from bmaster.database import LocalSession
+from bmaster.utils import TimeHHMM
 from plugins.school.models import (
 	Schedule, ScheduleData, ScheduleInfo, ScheduleLesson, PrecallEntry,
 	ScheduleAssignment, ScheduleAssignmentInfo,
-	ScheduleOverride, ScheduleOverrideInfo
+	ScheduleOverride, ScheduleOverrideInfo,
+	Automation, AutomationInfo, WeekdaySet
 )
-from plugins.school import logger, reschedule_lessons
+from plugins.school import logger, on_automation, reschedule_automations, reschedule_lessons
 
 
 router = APIRouter(prefix='/school', tags=['school'])
@@ -351,14 +354,119 @@ async def delete_schedule_override(override_id: int):
 			await session.delete(override)
 
 
+# AUTOMATION
+
+class AutomationCreateRequest(BaseModel):
+	name: str
+	sound_name: str
+	at: TimeHHMM
+	weekdays: WeekdaySet
+	enabled: bool = True
+
+class AutomationUpdateRequest(BaseModel):
+	name: Optional[str] = None
+	sound_name: Optional[str] = None
+	at: Optional[TimeHHMM] = None
+	weekdays: Optional[WeekdaySet] = None
+	enabled: Optional[bool] = None
+
+def check_sound_name(sound_name: str):
+	'''Raises 404 if there is no such sound in the sound storage directory'''
+	if not is_sound_name_valid(sound_name) or not (SOUNDS_DIR / sound_name).is_file():
+		raise HTTPException(404, 'school.automations.sound_not_found')
+
+@router.get('/automations')
+async def get_automations() -> List[AutomationInfo]:
+	async with LocalSession() as session:
+		automations = (await session.execute(select(Automation))).scalars()
+	return map(Automation.get_info, automations)
+
+@router.get('/automations/{automation_id}')
+async def get_automation(automation_id: int) -> AutomationInfo:
+	async with LocalSession() as session:
+		automation = await session.get(Automation, automation_id)
+	if automation is None:
+		raise HTTPException(404, 'school.automations.not_found')
+	return automation.get_info()
+
+@router.post('/automations', dependencies=[
+	Depends(require_permissions('school.manage'))
+])
+async def create_automation(req: AutomationCreateRequest) -> AutomationInfo:
+	check_sound_name(req.sound_name)
+	async with LocalSession() as session:
+		async with session.begin():
+			automation = Automation(
+				name=req.name,
+				enabled=req.enabled,
+				sound_name=req.sound_name,
+				at=req.at,
+				weekdays=req.weekdays
+			)
+			session.add(automation)
+	await reschedule_automations()
+	return automation.get_info()
+
+@router.patch('/automations/{automation_id}', dependencies=[
+	Depends(require_permissions('school.manage'))
+])
+async def update_automation(automation_id: int, req: AutomationUpdateRequest) -> AutomationInfo:
+	if req.sound_name is not None:
+		check_sound_name(req.sound_name)
+	async with LocalSession() as session:
+		async with session.begin():
+			automation = await session.get(Automation, automation_id)
+			if automation is None:
+				raise HTTPException(404, 'school.automations.not_found')
+			if req.name is not None:
+				automation.name = req.name
+			if req.sound_name is not None:
+				automation.sound_name = req.sound_name
+			if req.at is not None:
+				automation.at = req.at
+			if req.weekdays is not None:
+				automation.weekdays = req.weekdays
+			if req.enabled is not None:
+				automation.enabled = req.enabled
+	await reschedule_automations()
+	return automation.get_info()
+
+@router.delete('/automations/{automation_id}', dependencies=[
+	Depends(require_permissions('school.manage'))
+])
+async def delete_automation(automation_id: int):
+	async with LocalSession() as session:
+		async with session.begin():
+			automation = await session.get(Automation, automation_id)
+			if automation is None:
+				raise HTTPException(404, 'school.automations.not_found')
+			await session.delete(automation)
+	await reschedule_automations()
+
+@router.post('/automations/{automation_id}/run', dependencies=[
+	Depends(require_permissions('school.manage'))
+])
+async def run_automation(automation_id: int):
+	'''Plays automation's sound right now, ignoring its schedule and `enabled` state'''
+	async with LocalSession() as session:
+		automation = await session.get(Automation, automation_id)
+	if automation is None:
+		raise HTTPException(404, 'school.automations.not_found')
+	await on_automation(
+		automation_id=automation.id,
+		name=automation.name,
+		sound_name=automation.sound_name
+	)
+
 
 class SchoolSettings(BaseModel):
 	schedules: list[ScheduleInfo] | None = None
 	assignments: list[ScheduleAssignmentInfo] | None = None
 	overrides: list[ScheduleOverrideInfo] | None = None
+	automations: list[AutomationInfo] | None = None
 
 @router.get('/settings')
-async def export_settings(schedules: bool = False, assignments: bool = False, overrides: bool = False):
+async def export_settings(schedules: bool = False, assignments: bool = False, overrides: bool = False, automations: bool = False):
 	result = SchoolSettings()
 
 	async with LocalSession() as session:
@@ -374,6 +482,10 @@ async def export_settings(schedules: bool = False, assignments: bool = False, ov
 		if overrides:
 			overrides_q = (await session.execute(select(ScheduleOverride))).scalars()
 			result.overrides = list(map(ScheduleOverride.get_info, overrides_q))
+
+		if automations:
+			automations_q = (await session.execute(select(Automation))).scalars()
+			result.automations = list(map(Automation.get_info, automations_q))
 
 	return Response(
 		content=result.model_dump_json(),
@@ -392,6 +504,7 @@ async def import_settings(file: UploadFile):
 			await session.execute(delete(Schedule))
 			await session.execute(delete(ScheduleAssignment))
 			await session.execute(delete(ScheduleOverride))
+			await session.execute(delete(Automation))
 
 			if schedules := settings.schedules:
 				for info in schedules:
@@ -404,4 +517,9 @@ async def import_settings(file: UploadFile):
 			if overrides := settings.overrides:
 				for info in overrides:
 					session.add(ScheduleOverride.from_info(info))
+
+			if automations := settings.automations:
+				for info in automations:
+					session.add(Automation.from_info(info))
 	await reschedule_lessons()
+	await reschedule_automations()
