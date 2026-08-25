@@ -34,6 +34,10 @@ async def start():
     api.include_router(settings.router, prefix="/settings")
     api.include_router(certs.router, prefix="/certs")
 
+    @api.get("/health")
+    async def health():
+        return {"status": "ok"}
+
     @api.get("/{full_path:path}")
     async def not_found():
         raise HTTPException(status.HTTP_404_NOT_FOUND)

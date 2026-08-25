@@ -338,10 +338,10 @@ async def update_role(req: RoleUpdateRequest, role_id: int) -> RoleInfo:
 	from bmaster.database import LocalSession
 	
 	async with LocalSession() as session, session.begin():
-		role = session.get(Role, role_id)
+		role = await session.get(Role, role_id)
 		if not role:
 			raise HTTPException(status.HTTP_404_NOT_FOUND, 'Role not found')
-		
+
 		if req.name is not None:
 			role.name = req.name
 		if req.permissions is not None:
@@ -356,7 +356,7 @@ async def delete_role(role_id: int) -> RoleInfo:
 	from bmaster.database import LocalSession
 	
 	async with LocalSession() as session, session.begin():
-		role = session.get(Role, role_id)
+		role = await session.get(Role, role_id)
 		if not role:
 			raise HTTPException(status.HTTP_404_NOT_FOUND, 'Role not found')
 		await session.delete(role)

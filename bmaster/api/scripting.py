@@ -4,10 +4,13 @@ from fastapi import Depends, HTTPException, status
 from pydantic import BaseModel, Field, SerializeAsAny
 from sqlalchemy import select
 
+from bmaster import logs
 from bmaster.api.auth import require_permissions
 from bmaster.scheduling import JobTrigger
 from bmaster.scripting import BaseScript, Script, ScriptData, ScriptTask, ScriptTaskInfo, ScriptInfo
 from bmaster.api import api
+
+logger = logs.main_logger.getChild('api.scripting')
 
 
 @api.get('/scripting/scripts/{script_id}', tags=['scripting'])
@@ -23,7 +26,7 @@ async def get_scripts() -> list[ScriptInfo]:
 	from bmaster.database import LocalSession
 	async with LocalSession() as session:
 		scripts = (await session.execute(select(Script))).scalars()
-	return map(lambda s: s.get_info(), scripts)
+	return list(map(lambda s: s.get_info(), scripts))
 
 class ScriptCreateRequest(BaseModel):
 	name: str
@@ -82,7 +85,10 @@ async def execute_script(script_id: int):
 	async with LocalSession() as session, session.begin():
 		script = await session.get(Script, script_id)
 		if not script: raise HTTPException(status.HTTP_404_NOT_FOUND, 'Script not found')
-	asyncio.create_task(script.execute())
+	def _on_script_done(t: asyncio.Task):
+		if not t.cancelled() and t.exception():
+			logger.error('Script #%d execution failed', script_id, exc_info=t.exception())
+	asyncio.create_task(script.execute()).add_done_callback(_on_script_done)
 
 
 @api.get('/scripting/tasks/{task_id}', tags=['scripting'])
@@ -99,7 +105,7 @@ async def get_tasks() -> list[ScriptTaskInfo]:
 	from bmaster.database import LocalSession
 	async with LocalSession() as session:
 		scripts = (await session.execute(select(ScriptTask))).scalars()
-	return map(lambda s: s.get_info(), scripts)
+	return list(map(lambda s: s.get_info(), scripts))
 
 class ScriptTaskCreateRequest(BaseModel):
 	script_id: int
@@ -112,16 +118,13 @@ class ScriptTaskCreateRequest(BaseModel):
 async def create_task(req: ScriptTaskCreateRequest) -> ScriptTaskInfo:
 	from bmaster.database import LocalSession
 	task = ScriptTask(tags=req.tags, trigger=req.trigger)
-	print(req.trigger)
-	print(task.trigger)
 
 	async with LocalSession() as session, session.begin():
 		script = await session.get(Script, req.script_id)
 		if not script: raise HTTPException('Script not found')
 		task.script = script
 		session.add(task)
-	
-	print(task.trigger)
+
 	task.post_create()
 	return task.get_info()
 

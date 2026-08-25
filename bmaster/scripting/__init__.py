@@ -136,5 +136,5 @@ async def execute_script_task_by_id(task_id: int):
 		await task.script.execute()
 	else:
 		logger.warning(f'Removing orphan job bounded to unknown script task #{task_id}')
-		try: scheduler.remove_job('bmaster.scripting.script_task#{task_id}')
-		except: pass
+		try: scheduler.remove_job(f'bmaster.scripting.script_task#{task_id}')
+		except Exception: pass

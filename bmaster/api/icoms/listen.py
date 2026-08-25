@@ -41,6 +41,7 @@ async def listen_icom(ws: WebSocket):
 				'error': 'icom not found'
 			})
 			await ws.close()
+			return
 
 		icom_output = icom.output
 
@@ -52,7 +53,8 @@ async def listen_icom(ws: WebSocket):
 				'error': 'only 1 channel supported'
 			})
 			await ws.close()
-		
+			return
+
 		rate = request.rate or icom_output.rate
 
 		chunk_size = request.chunk_size
@@ -82,9 +84,10 @@ async def listen_icom(ws: WebSocket):
 
 	icom.output.listen(drain.push)
 
-	while True:
-		try: msg = await ws.receive_json()
-		except WebSocketDisconnect: break
-		except RuntimeError: break
-
-	icom.output.outputs.remove(drain.push)
+	try:
+		while True:
+			try: msg = await ws.receive_json()
+			except WebSocketDisconnect: break
+			except RuntimeError: break
+	finally:
+		icom.output.outputs.remove(drain.push)

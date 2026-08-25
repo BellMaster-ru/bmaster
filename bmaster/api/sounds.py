@@ -36,12 +36,12 @@ async def get_sounds() -> list[SoundInfo]:
 		if not file.is_file():
 			continue
 		name = file.name
-		sound = sounds.storage.get(name)
+		dur = await sounds.get_duration(name)
 		res.append(
 			SoundInfo(
 				name=name,
 				size=file.stat().st_size,
-				sound_specs=SoundSpecs(duration=sound.duration) if sound else None,
+				sound_specs=SoundSpecs(duration=dur) if dur is not None else None,
 			)
 		)
 	return res
@@ -71,7 +71,7 @@ async def delete_sound_file(name: str):
 		raise HTTPException(status.HTTP_404_NOT_FOUND, 'File not found')
 
 	os.remove(file_path)
-	sounds.storage.mount_sync()
+	sounds.invalidate(name)
 
 
 @router.post('/file', dependencies=[
@@ -79,7 +79,6 @@ async def delete_sound_file(name: str):
 ])
 async def upload_sound_file(file: UploadFile):
 	name = file.filename
-	print(name)
 	if not is_sound_name_valid(name):
 		raise HTTPException(status.HTTP_400_BAD_REQUEST, 'Invalid file name')
 
@@ -91,4 +90,3 @@ async def upload_sound_file(file: UploadFile):
 
 	async with await anyio.open_file(file_path, 'wb') as f:
 		await f.write(await file.read())
-	sounds.storage.mount_sync()

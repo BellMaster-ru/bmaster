@@ -50,13 +50,13 @@ class Icom:
 		return self.output.run(ICOM_TICK_DELAY)
 
 	def start(self):
-		if not self.paused: ValueError("Icom is not paused")
+		if not self.paused: raise ValueError("Icom is not paused")
 		self.paused = False
 		next_query = self._take_next_query()
 		if next_query: self._play_query(next_query)
 
 	def stop(self):
-		if self.paused: ValueError("Icom is paused")
+		if self.paused: raise ValueError("Icom is paused")
 		self.paused = True
 
 		playing = self.playing
@@ -168,6 +168,7 @@ async def start():
 			icom.output.listen(stack.push)
 			direct.output_mixer.add(stack.pull)
 		_icoms_map[icom_id] = icom
-		asyncio.create_task(icom.run())
+		task = asyncio.create_task(icom.run())
+		task.add_done_callback(lambda t: logger.error('Icom %s output loop crashed', icom_id, exc_info=t.exception()) if not t.cancelled() and t.exception() else None)
 
 	logger.debug('Icoms initialized')
