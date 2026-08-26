@@ -28,28 +28,21 @@ apt_install_once() {
 
 # ---------- ensure OS deps (Debian-like) ----------
 if need_apt; then
-  echo "[-] Ensuring base packages (curl, ca-certificates, portaudio)..."
-  apt_install_once curl ca-certificates portaudio19-dev libffi-dev build-essential ffmpeg pulseaudio python3 python3-pip python3-venv
+  echo "[-] Ensuring base packages..."
+  apt_install_once curl ca-certificates git portaudio19-dev libffi-dev build-essential ffmpeg pulseaudio python3 python3-venv
   echo "[+] Base packages are installed"
 else
   echo "[!] apt-get not found. This script expects Debian/Ubuntu-like system."
   exit 1
 fi
 
-# ---------- ensure python + pip ----------
+# ---------- ensure python ----------
 echo "[-] Checking if Python 3 is installed..."
 if ! command -v python3 >/dev/null 2>&1; then
   echo "[!] Python3 is still missing after package install."
   exit 1
 fi
 echo "[+] Python 3 is installed"
-
-echo "[-] Checking if pip is installed..."
-if ! command -v pip3 >/dev/null 2>&1; then
-  echo "[!] pip is still missing after package install."
-  exit 1
-fi
-echo "[+] pip is installed"
 
 # ---------- install uv (official script) ----------
 echo "[-] Installing uv via official script..."
@@ -72,8 +65,8 @@ echo "[+] Using uv at: $UV_BIN"
 
 # ---------- create venv if missing ----------
 if [ ! -d ".venv" ]; then
-  echo "[-] Creating virtual environment (.venv)..."
-  "$UV_BIN" venv .venv
+  echo "[-] Creating virtual environment (.venv) with Python 3.13..."
+  "$UV_BIN" venv .venv --python 3.13
   echo "[+] Virtual environment created"
 fi
 
@@ -94,8 +87,9 @@ if ! command -v systemctl >/dev/null 2>&1; then
 fi
 
 REPO_DIR="$(pwd -P)"
+CURRENT_USER="$(id -un)"
 SERVICE_NAME="bmaster.service"
-SERVICE_FILE="$HOME/.config/systemd/user/bmaster.service"
+SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}"
 
 PYTHON_BIN="${REPO_DIR}/.venv/bin/python"
 MAIN_PY="${REPO_DIR}/main.py"
@@ -105,7 +99,6 @@ if [ ! -x "$PYTHON_BIN" ]; then
 fi
 
 echo "[-] Creating systemd unit at ${SERVICE_FILE}..."
-mkdir -p "$HOME/.config/systemd/user"
 TMP_UNIT="$(mktemp)"
 cat > "$TMP_UNIT" <<EOF
 [Unit]
@@ -115,6 +108,7 @@ Wants=network-online.target
 
 [Service]
 Type=simple
+User=${CURRENT_USER}
 WorkingDirectory=${REPO_DIR}
 ExecStart=${UV_BIN} run ${MAIN_PY}
 Restart=always
@@ -123,9 +117,8 @@ RestartSec=5
 Environment=PYTHONUNBUFFERED=1
 
 [Install]
-WantedBy=default.target
+WantedBy=multi-user.target
 EOF
-
 
 run_as_root install -m 644 "$TMP_UNIT" "$SERVICE_FILE"
 rm -f "$TMP_UNIT"

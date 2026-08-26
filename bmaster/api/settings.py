@@ -1,6 +1,8 @@
 import asyncio
+import os
 import platform
 import re
+import signal
 import subprocess
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
@@ -45,6 +47,19 @@ class CheckUpdatesResponse(BaseModel):
     backend_has_updates: bool = False
     frontend_has_updates: bool = False
     detail: str | None = None
+
+
+def _schedule_restart(delay: float = 2.0):
+    async def _do_restart():
+        await asyncio.sleep(delay)
+        os.kill(os.getpid(), signal.SIGTERM)
+    asyncio.create_task(_do_restart())
+
+
+@router.post("/restart", dependencies=[Depends(require_permissions("bmaster.settings.restart"))])
+async def restart() -> bool:
+    _schedule_restart()
+    return True
 
 
 @router.post("/reboot", dependencies=[Depends(require_permissions("bmaster.settings.reboot"))])
@@ -170,6 +185,9 @@ async def update_endpoint() -> UpdateResponse:
         )
     except Exception as exc:
         return UpdateResponse(ok=False, status="failed", detail=str(exc))
+
+    if backend_updated:
+        _schedule_restart()
 
     return UpdateResponse(
         ok=True,
